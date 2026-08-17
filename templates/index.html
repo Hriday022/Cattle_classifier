@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Cattle Breed Classifier</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 520px; margin: 60px auto; padding: 0 20px; color: #222; }
+  h1 { font-size: 1.4rem; }
+  .drop { border: 2px dashed #999; border-radius: 10px; padding: 30px; text-align: center; cursor: pointer; }
+  .drop.dragover { border-color: #2563eb; background: #eef4ff; }
+  #preview { max-width: 100%; margin-top: 16px; border-radius: 8px; display: none; }
+  button { margin-top: 16px; padding: 10px 20px; border: none; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; font-size: 1rem; }
+  button:disabled { background: #aaa; cursor: not-allowed; }
+  #result { margin-top: 20px; padding: 16px; border-radius: 8px; background: #f5f5f5; display: none; }
+  .ood { background: #fff3cd !important; }
+  .row { display: flex; justify-content: space-between; margin: 4px 0; }
+</style>
+</head>
+<body>
+  <h1>Cattle Breed Classifier</h1>
+  <p>Upload an image of cattle to get a breed prediction. Low-confidence images are flagged as out-of-distribution.</p>
+
+  <div class="drop" id="drop">Click or drag an image here</div>
+  <input type="file" id="fileInput" accept="image/*" hidden />
+  <img id="preview" />
+  <br />
+  <button id="predictBtn" disabled>Predict</button>
+
+  <div id="result"></div>
+
+<script>
+  const drop = document.getElementById('drop');
+  const fileInput = document.getElementById('fileInput');
+  const preview = document.getElementById('preview');
+  const predictBtn = document.getElementById('predictBtn');
+  const result = document.getElementById('result');
+  let selectedFile = null;
+
+  drop.addEventListener('click', () => fileInput.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('dragover'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('dragover');
+    handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+  function handleFile(file) {
+    if (!file) return;
+    selectedFile = file;
+    preview.src = URL.createObjectURL(file);
+    preview.style.display = 'block';
+    predictBtn.disabled = false;
+    result.style.display = 'none';
+  }
+
+  predictBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+    predictBtn.disabled = true;
+    predictBtn.textContent = 'Predicting...';
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+      const res = await fetch('/predict', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (data.error) {
+        result.textContent = 'Error: ' + data.error;
+        result.className = '';
+      } else {
+        result.className = data.is_out_of_distribution ? 'ood' : '';
+        let html = `<div class="row"><strong>Prediction:</strong> ${data.prediction}</div>
+                     <div class="row"><strong>Confidence:</strong> ${data.confidence}%</div>`;
+        if (data.is_out_of_distribution) {
+          html += `<div class="row"><strong>⚠ Low confidence — possibly out-of-distribution</strong></div>`;
+        }
+        html += `<hr><strong>Top 3:</strong>`;
+        data.top3.forEach(t => {
+          html += `<div class="row"><span>${t.label}</span><span>${t.confidence}%</span></div>`;
+        });
+        result.innerHTML = html;
+      }
+      result.style.display = 'block';
+    } catch (err) {
+      result.textContent = 'Request failed: ' + err;
+      result.style.display = 'block';
+    }
+
+    predictBtn.disabled = false;
+    predictBtn.textContent = 'Predict';
+  });
+</script>
+</body>
+</html>
